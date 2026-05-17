@@ -6,7 +6,10 @@
     ports:
       - "5000:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
+      - Jwt__Key=super-secret-key-minimum-32-characters-long
+      - Jwt__Issuer=UrlShortener
+      - Jwt__Audience=UrlShortener
+      - Jwt__ExpiryDays=7
       - ConnectionStrings__Default=Host=db;Port=5432;Database=urlshortener;Username=postgres;Password=postgres
       - ConnectionStrings__Redis=redis:6379
     depends_on:

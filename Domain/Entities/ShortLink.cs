@@ -6,6 +6,7 @@
         public string OriginalUrl { get; set; } = string.Empty;
         public string Code { get; set; } = string.Empty;
         public int ClickCount { get; set; }
+        public Guid UserGlobalId { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? ExpiresAt { get; set; }
     }

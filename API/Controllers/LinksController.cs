@@ -1,18 +1,22 @@
 ﻿using Application.DTOs;
 using Application.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using System.Security.Claims;
 
 [ApiController]
 [Route("api/links")]
 public class LinksController(UrlShortenerService svc) : ControllerBase
 {
-    /// <summary>Создать короткую ссылку</summary>
+    /// <summary>Create short link</summary>
     [HttpPost]
+    [Authorize]
     [EnableRateLimiting("shorten_limit")]
-    public async Task<IActionResult> Shorten([FromBody] ShortenRequest req)
+    public async Task<IActionResult> Shorten([FromBody] ShortenRequest request, CancellationToken cancellationToken)
     {
-        var link = await svc.ShortenAsync(req.Url, req.TtlDays);
+        var userId = GetUserId();
+        var link = await svc.ShortenAsync(request.Url, userId, request.TtlDays, request.Reuse, cancellationToken);
 
         var response = new ShortenResponse(
             ShortUrl: $"{Request.Scheme}://{Request.Host}/{link.Code}",
@@ -24,11 +28,28 @@ public class LinksController(UrlShortenerService svc) : ControllerBase
         return CreatedAtAction(nameof(GetStats), new { code = link.Code }, response);
     }
 
-    /// <summary>Статистика по ссылке</summary>
+    /// <summary>Link's statistics</summary>
     [HttpGet("{code}/stats")]
+    [Authorize]
     public async Task<IActionResult> GetStats(string code)
     {
-        var link = await svc.GetByCodeAsync(code);
+        var userId = GetUserId();
+        var link = await svc.GetByCodeAsync(code, userId);
         return link is null ? NotFound() : Ok(link);
+    }
+
+    /// <summary>User's links</summary>
+    [HttpGet("myLinks")]
+    [Authorize]
+    public async Task<IActionResult> MyLinks()
+    {
+        var userId = GetUserId();
+        var links = await svc.GetUserLinksAsync(userId);
+        return Ok(links);
+    }
+
+    private Guid GetUserId()
+    {
+        return Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
     }
 }

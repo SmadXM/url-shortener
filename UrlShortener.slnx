@@ -1,7 +1,12 @@
 <Solution>
+  <Folder Name="/.github/" />
+  <Folder Name="/.github/workflows/">
+    <File Path="ci.yml" />
+  </Folder>
   <Folder Name="/Элементы решения/">
     <File Path="docker-compose.yml" />
     <File Path="DockerFile.txt" />
+    <File Path="README.md" />
   </Folder>
   <Project Path="API/API.csproj" />
   <Project Path="Application/Application.csproj" />

@@ -12,9 +12,9 @@ namespace Application.Services
     {
         private const string _chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
-        public async Task<ShortLink?> GetByCodeAsync(string code) => await dbContext.ShortLinks.FirstOrDefaultAsync(x => x.Code == code);
+        public async Task<ShortLink?> GetByCodeAsync(string code, Guid userId) => await dbContext.ShortLinks.FirstOrDefaultAsync(x => x.Code == code && x.UserGlobalId == userId);
 
-        public async Task<ShortLink> ShortenAsync(string originalUrl, int? ttlDays = null, bool reuse = true, CancellationToken cancellationToken = default)
+        public async Task<ShortLink> ShortenAsync(string originalUrl, Guid userId, int? ttlDays = null, bool reuse = true, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(originalUrl))
                 throw new ArgumentException("URL cannot be empty", nameof(originalUrl));
@@ -27,18 +27,23 @@ namespace Application.Services
             {
                 var cacheKey = $"url:{originalUrl}";
                 var cachedBytes = await cache.GetAsync(cacheKey, cancellationToken);
+
                 if (cachedBytes != null)
                 {
                     var cachedCode = Encoding.UTF8.GetString(cachedBytes);
                     var cachedLink = await dbContext.ShortLinks
-                        .FirstOrDefaultAsync(x => x.Code == cachedCode, cancellationToken);
+                        .FirstOrDefaultAsync(x => x.Code == cachedCode && x.UserGlobalId == userId, cancellationToken);
+
                     if (cachedLink != null)
                         return cachedLink;
                 }
 
                 var existing = await dbContext.ShortLinks
                     .FirstOrDefaultAsync(x => x.OriginalUrl == originalUrl &&
-                        (x.ExpiresAt > DateTime.UtcNow || !x.ExpiresAt.HasValue), cancellationToken);
+                                             (x.ExpiresAt > DateTime.UtcNow || !x.ExpiresAt.HasValue) && 
+                                              x.UserGlobalId == userId,        
+                        cancellationToken);
+
                 if (existing != null)
                 {
                     await cache.SetAsync(cacheKey, Encoding.UTF8.GetBytes(existing.Code),
@@ -46,6 +51,7 @@ namespace Application.Services
                         {
                             AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(60)
                         }, cancellationToken);
+
                     return existing;
                 }
             }
@@ -55,6 +61,7 @@ namespace Application.Services
             {
                 code = GenerateCode();
             }
+
             while (await dbContext.ShortLinks.AnyAsync(x => x.Code == code, cancellationToken));
 
             var link = new ShortLink
@@ -62,9 +69,10 @@ namespace Application.Services
                 OriginalUrl = originalUrl,
                 Code = code,
                 CreatedAt = DateTime.UtcNow,
+                UserGlobalId = userId,
                 ExpiresAt = ttlDays.HasValue && ttlDays.Value > 0
-                    ? DateTime.UtcNow.AddDays(ttlDays.Value)
-                    : null
+                                ? DateTime.UtcNow.AddDays(ttlDays.Value)
+                                : null
             };
 
             dbContext.ShortLinks.Add(link);
@@ -87,6 +95,7 @@ namespace Application.Services
         public async Task<ShortLink?> ResolveAsync (string code)
         {
             var cached = await cache.GetStringAsync($"link:{code}");
+
             if (cached != null && cached.Length > 0)
                 return JsonSerializer.Deserialize<ShortLink>(cached);
 
@@ -116,6 +125,11 @@ namespace Application.Services
             await cache.RemoveAsync($"link:{code}");
         }
 
+        public async Task<List<ShortLink>> GetUserLinksAsync(Guid userId)
+            => await dbContext.ShortLinks
+                .Where(x => x.UserGlobalId == userId)
+                .OrderByDescending(x => x.CreatedAt)
+                .ToListAsync();
         private static string GenerateCode()
         {
             var bytes = RandomNumberGenerator.GetBytes(6);

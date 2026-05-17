@@ -11,6 +11,20 @@ namespace Tests
 {
     public class UrlShortenerServiceTests
     {
+        private readonly Guid _userId = Guid.NewGuid();
+
+        private string GetTokenForTest()
+        {
+            // Simulate a token that encodes the user id (for tests only)
+            return Convert.ToBase64String(_userId.ToByteArray());
+        }
+
+        private Guid GetUserIdFromToken(string token)
+        {
+            var bytes = Convert.FromBase64String(token);
+            return new Guid(bytes);
+        }
+
         private AppDbContext CreateDb()
         {
             var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -33,7 +47,9 @@ namespace Tests
             var db = CreateDb();
             var svc = CreateSvc(db);
 
-            var result = await svc.ShortenAsync("https://google.com");
+            var token = GetTokenForTest();
+            var userId = GetUserIdFromToken(token);
+            var result = await svc.ShortenAsync("https://google.com", userId);
 
             Assert.NotNull(result.Code);
             Assert.Equal(6, result.Code.Length);
@@ -46,8 +62,12 @@ namespace Tests
             var db = CreateDb();
             var svc = CreateSvc(db);
 
-            var a = await svc.ShortenAsync("https://google.com", reuse: false);
-            var b = await svc.ShortenAsync("https://google.com", reuse: false);
+            var tokenA = GetTokenForTest();
+            var userIdA = GetUserIdFromToken(tokenA);
+            var a = await svc.ShortenAsync("https://google.com", userIdA, reuse: false);
+            var tokenB = GetTokenForTest();
+            var userIdB = GetUserIdFromToken(tokenB);
+            var b = await svc.ShortenAsync("https://google.com", userIdB, reuse: false);
 
             Assert.NotEqual(a.Code, b.Code);
         }
@@ -58,8 +78,12 @@ namespace Tests
             var db = CreateDb();
             var svc = CreateSvc(db);
 
-            var a = await svc.ShortenAsync("https://google.com");
-            var b = await svc.ShortenAsync("https://google.com");
+            var tokenA = GetTokenForTest();
+            var userIdA = GetUserIdFromToken(tokenA);
+            var a = await svc.ShortenAsync("https://google.com", userIdA);
+            var tokenB = GetTokenForTest();
+            var userIdB = GetUserIdFromToken(tokenB);
+            var b = await svc.ShortenAsync("https://google.com", userIdB);
 
             Assert.Equal(a.Code, b.Code);
         }
@@ -101,7 +125,9 @@ namespace Tests
             var db = CreateDb();
             var svc = CreateSvc(db);
 
-            var result = await svc.ShortenAsync("https://example.com", ttlDays: 7);
+            var token = GetTokenForTest();
+            var userId = GetUserIdFromToken(token);
+            var result = await svc.ShortenAsync("https://example.com", userId, ttlDays: 7);
 
             Assert.NotNull(result.ExpiresAt);
             Assert.True(result.ExpiresAt > DateTime.UtcNow);
@@ -114,7 +140,9 @@ namespace Tests
         public async Task Shorten_EmptyOrNullUrl_ThrowsArgumentException(string url)
         {
             var svc = CreateSvc(CreateDb());
-            await Assert.ThrowsAsync<ArgumentException>(() => svc.ShortenAsync(url));
+            var token = GetTokenForTest();
+            var userId = GetUserIdFromToken(token);
+            await Assert.ThrowsAsync<ArgumentException>(() => svc.ShortenAsync(url, userId));
         }
 
         [Theory]
@@ -124,14 +152,18 @@ namespace Tests
         public async Task Shorten_InvalidUrl_ThrowsArgumentException(string url)
         {
             var svc = CreateSvc(CreateDb());
-            await Assert.ThrowsAsync<ArgumentException>(() => svc.ShortenAsync(url));
+            var token = GetTokenForTest();
+            var userId = GetUserIdFromToken(token);
+            await Assert.ThrowsAsync<ArgumentException>(() => svc.ShortenAsync(url, userId));
         }
 
         [Fact]
         public async Task Shorten_WithZeroTtl_ExpiresAtIsNull()
         {
             var svc = CreateSvc(CreateDb());
-            var result = await svc.ShortenAsync("https://example.com", ttlDays: 0);
+            var token = GetTokenForTest();
+            var userId = GetUserIdFromToken(token);
+            var result = await svc.ShortenAsync("https://example.com", userId, ttlDays: 0);
             Assert.Null(result.ExpiresAt);
         }
 
@@ -145,7 +177,9 @@ namespace Tests
             var codes = new HashSet<string>();
             foreach (var url in urls)
             {
-                var link = await svc.ShortenAsync(url);
+                var token = GetTokenForTest();
+                var userId = GetUserIdFromToken(token);
+                var link = await svc.ShortenAsync(url, userId);
                 Assert.True(codes.Add(link.Code), $"Duplicate code: {link.Code}");
             }
         }
@@ -168,7 +202,9 @@ namespace Tests
             await db.SaveChangesAsync();
 
             var svc = new UrlShortenerService(db, cache.Object);
-            var result = await svc.ShortenAsync("https://google.com");
+            var token = GetTokenForTest();
+            var userId = GetUserIdFromToken(token);
+            var result = await svc.ShortenAsync("https://google.com", userId);
 
             Assert.Equal("abc123", result.Code);
         }
@@ -178,8 +214,9 @@ namespace Tests
         {
             var db = CreateDb();
             var svc = CreateSvc(db);
-
-            var link = await svc.ShortenAsync("https://example.com");
+            var token = GetTokenForTest();
+            var userId = GetUserIdFromToken(token);
+            var link = await svc.ShortenAsync("https://example.com", userId);
             var result = await svc.ResolveAsync(link.Code);
 
             Assert.NotNull(result);
@@ -216,8 +253,9 @@ namespace Tests
         {
             var db = CreateDb();
             var svc = CreateSvc(db);
-
-            var link = await svc.ShortenAsync("https://example.com");
+            var token = GetTokenForTest();
+            var userId = GetUserIdFromToken(token);
+            var link = await svc.ShortenAsync("https://example.com", userId);
             var result = await svc.ResolveAsync(link.Code.ToUpper());
 
             if (result != null)
@@ -229,8 +267,9 @@ namespace Tests
         {
             var db = CreateDb();
             var svc = CreateSvc(db);
-
-            var link = await svc.ShortenAsync("https://example.com");
+            var token = GetTokenForTest();
+            var userId = GetUserIdFromToken(token);
+            var link = await svc.ShortenAsync("https://example.com", userId);
             db.ShortLinks.Remove(db.ShortLinks.Single(l => l.Code == link.Code));
             await db.SaveChangesAsync();
 
